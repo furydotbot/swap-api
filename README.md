@@ -12,19 +12,7 @@ This JavaScript script replaces the PowerShell script functionality and provides
    ```bash
    npm run start
    ```
-
-2. Set up your private key as an environment variable (recommended for security):
-   ```bash
-   # Windows PowerShell
-   $env:PRIVATE_KEY="your_base58_private_key_here"
    
-   # Windows Command Prompt
-   set PRIVATE_KEY=your_base58_private_key_here
-   
-   # Linux/Mac
-   export PRIVATE_KEY="your_base58_private_key_here"
-   ```
-
 ## Usage
 
 ### Method 1: Using Environment Variable (Recommended)
