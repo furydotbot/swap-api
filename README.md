@@ -10,7 +10,7 @@ This JavaScript script replaces the PowerShell script functionality and provides
 
 1. Make sure the API server is running:
    ```bash
-   npm run api
+   npm run start
    ```
 
 2. Set up your private key as an environment variable (recommended for security):
