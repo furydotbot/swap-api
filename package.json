@@ -1,0 +1,56 @@
+{
+  "name": "fury-swap-api",
+  "version": "1.0.0",
+  "description": "Fury Swap API",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js",
+    "start:snapshot": "tsc && node dist/index.js --snapshot trades_backup.json",
+    "start:snapshot-url": "tsc && node dist/index.js --snapshot http://localhost:3001/api/trades",
+    "api": "tsc && node dist/api.js",
+    "api:dev": "tsc && node dist/api.js",
+    "clean": "rmdir /s /q dist",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "solana",
+    "transaction",
+    "parser",
+    "dex",
+    "token",
+    "blockchain"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@meteora-ag/dynamic-bonding-curve-sdk": "^1.3.8",
+    "@pump-fun/pump-sdk": "^1.18.5",
+    "@raydium-io/raydium-sdk-v2": "^0.2.20-alpha",
+    "@solana/web3.js": "^1.98.4",
+    "@triton-one/yellowstone-grpc": "^0.4.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "blessed": "^0.1.81",
+    "bs58": "^6.0.0",
+    "chalk": "^5.6.0",
+    "clear": "^0.1.0",
+    "cli-table3": "^0.6.5",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^5.1.0",
+    "node-fetch": "^2.7.0",
+    "solana-dex-parser": "^2.6.2"
+  },
+  "devDependencies": {
+    "@types/blessed": "^0.1.25",
+    "@types/bn.js": "^5.2.0",
+    "@types/bs58": "^4.0.4",
+    "@types/clear": "^0.1.4",
+    "@types/node": "^20.0.0",
+    "@types/node-fetch": "^2.6.11",
+    "typescript": "^5.0.0"
+  }
+}
