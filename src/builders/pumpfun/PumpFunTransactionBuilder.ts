@@ -1,4 +1,4 @@
-import { BaseTransactionBuilder, SwapParams, SwapTransaction, SwapInstruction } from '../TransactionBuilder';
+import { BaseTransactionBuilder, SwapParams, SwapTransaction, SwapInstruction } from '../../TransactionBuilder';
 import { PumpSdk, bondingCurvePda } from '@pump-fun/pump-sdk';
 import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';

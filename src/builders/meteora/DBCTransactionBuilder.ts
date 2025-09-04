@@ -1,4 +1,4 @@
-import { BaseTransactionBuilder, SwapParams, SwapTransaction, SwapInstruction } from '../TransactionBuilder';
+import { BaseTransactionBuilder, SwapParams, SwapTransaction, SwapInstruction } from '../../TransactionBuilder';
 import { 
   Connection, 
   PublicKey, 
@@ -61,16 +61,6 @@ export class DBCTransactionBuilder extends BaseTransactionBuilder {
       if (!poolAccount) {
         throw new Error('Pool not found');
       }
-      
-      const pool = poolAccount.account;
-      const bondingCurve = poolAccount.publicKey;
-      
-      // Get pool config
-      //const poolConfig = await this.client.state.getPoolConfig(pool.config);
-      
-      // Get vault addresses
-      //const tokenVault = deriveDbcTokenVaultAddress(bondingCurve, mint);
-      //const solVault = deriveDbcTokenVaultAddress(bondingCurve, NATIVE_MINT);
       
       // Get user token accounts
       const userTokenAccount = await getAssociatedTokenAddress(mint, user, false, TOKEN_PROGRAM_ID);

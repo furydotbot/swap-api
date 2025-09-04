@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/index.js --monitor false",
     "dev": "tsc && node dist/index.js",
     "start:snapshot": "tsc && node dist/index.js --snapshot trades_backup.json",
     "start:snapshot-url": "tsc && node dist/index.js --snapshot http://localhost:3001/api/trades",
@@ -26,10 +26,13 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@meteora-ag/cp-amm-sdk": "^1.1.1",
+    "@meteora-ag/dlmm-sdk": "^0.7.7",
     "@meteora-ag/dynamic-bonding-curve-sdk": "^1.3.8",
     "@pump-fun/pump-sdk": "^1.18.5",
     "@raydium-io/raydium-sdk-v2": "^0.2.20-alpha",
-    "@solana/web3.js": "^1.98.4",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.95.2",
     "@triton-one/yellowstone-grpc": "^0.4.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
@@ -42,6 +45,7 @@
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
     "node-fetch": "^2.7.0",
+    "rpc-websockets": "^7.5.1",
     "solana-dex-parser": "^2.6.2"
   },
   "devDependencies": {

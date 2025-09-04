@@ -1,10 +1,9 @@
-import { BaseTransactionBuilder, SwapParams, SwapTransaction, SwapInstruction } from '../TransactionBuilder';
+import { BaseTransactionBuilder, SwapParams, SwapTransaction, SwapInstruction } from '../../TransactionBuilder';
 import { 
   Connection, 
   PublicKey, 
   TransactionInstruction,
   SystemProgram,
-  Transaction,
   SYSVAR_RENT_PUBKEY
 } from '@solana/web3.js';
 import {
@@ -18,8 +17,6 @@ import {
   getPdaLaunchpadAuth,
   getPdaPlatformVault,
   getPdaCreatorVault,
-  Curve,
-  PlatformConfig,
   LAUNCHPAD_PROGRAM,
   Raydium
 } from '@raydium-io/raydium-sdk-v2';
@@ -76,8 +73,6 @@ export class LaunchpadTransactionBuilder extends BaseTransactionBuilder {
       
       // Get pool information using the poolId from trade data
       const poolInfo = await this.raydium.launchpad.getRpcPoolInfo({ poolId });
-      const data = await this.connection.getAccountInfo(poolInfo.platformId);
-      const platformInfo = PlatformConfig.decode(data!.data);
       
       // Get auth program ID
       const authProgramId = getPdaLaunchpadAuth(programId).publicKey;
@@ -240,23 +235,6 @@ export class LaunchpadTransactionBuilder extends BaseTransactionBuilder {
       })),
       data: Buffer.from(instruction.data).toString('base64')
     };
-  }
-  
-  // Helper method to calculate expected output using Raydium SDK
-  public async calculateSwapOutput(
-    tokenMint: string,
-    inputAmount: number,
-    isTokenToSol: boolean = false
-  ): Promise<string> {
-    try {
-      // For now, return a simple calculation or "0" until SDK types are properly resolved
-      // This method can be implemented once the SDK type issues are resolved
-      console.warn('calculateSwapOutput not fully implemented due to SDK type constraints');
-      return "0";
-    } catch (error) {
-      console.error('Error calculating swap output:', error);
-      return "0";
-    }
   }
   
   // Launchpad specific helper methods
