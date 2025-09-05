@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { getAllTrades, getTradeForMint, getMemoryStats, connection } from './index';
+import { getAllTrades, getTradeForMint, getMemoryStats, getTradeStatsByProgramId, connection } from './index';
 import { Trade } from './types';
 import { getTransactionBuilderRegistry } from './builders/TransactionBuilderRegistry';
 import { SwapParams } from './TransactionBuilder';
@@ -167,20 +167,13 @@ app.get('/api/quote/:mint', (req, res) => {
 app.post('/api/swap/:mint', async (req, res) => {
   try {
     const { mint } = req.params;
-    const { amountIn, amountOut, type, slippage, signer, encoding } = req.body;
+    const { quote, signer, encoding } = req.body;
     
     // Validate required parameters
-    if (!amountIn && !amountOut) {
+    if (!quote) {
       return res.status(400).json({
         success: false,
-        error: 'Either amountIn or amountOut parameter is required'
-      });
-    }
-    
-    if (!type || (type !== 'buy' && type !== 'sell')) {
-      return res.status(400).json({
-        success: false,
-        error: 'type parameter is required and must be "buy" or "sell"'
+        error: 'quote parameter is required. Please get a quote first using GET /api/quote/:mint'
       });
     }
     
@@ -207,25 +200,18 @@ app.post('/api/swap/:mint', async (req, res) => {
       });
     }
     
-    // Parse and validate slippage
-    let slippageBps = 100; // Default 1%
-    if (slippage !== undefined) {
-      const parsedSlippage = parseFloat(slippage as string);
-      if (isNaN(parsedSlippage) || parsedSlippage < 0 || parsedSlippage > 10000) {
-        return res.status(400).json({
-          success: false,
-          error: 'slippage must be a number between 0 and 10000 (basis points)'
-        });
-      }
-      slippageBps = parsedSlippage;
-    }
-    
-    // Parse amount
-    const amount = amountIn ? parseFloat(amountIn as string) : parseFloat(amountOut as string);
-    if (isNaN(amount) || amount <= 0) {
+    // Validate quote structure
+    if (!quote.type || !quote.inputAmount || !quote.outputAmount || !quote.slippageBps) {
       return res.status(400).json({
         success: false,
-        error: 'Amount must be a positive number'
+        error: 'Invalid quote format. Quote must contain type, inputAmount, outputAmount, and slippageBps'
+      });
+    }
+    
+    if (quote.type !== 'buy' && quote.type !== 'sell') {
+      return res.status(400).json({
+        success: false,
+        error: 'Quote type must be "buy" or "sell"'
       });
     }
     
@@ -239,35 +225,11 @@ app.post('/api/swap/:mint', async (req, res) => {
       });
     }
     
-    // Calculate swap amounts (same logic as quote)
-    let inputAmount = null;
-    let outputAmount = null;
-    let calculatedOutputAmount = null;
-    let calculatedInputAmount = null;
-    
-    if (type === 'buy') {
-      // Buy: amountIn is SOL, calculate token output
-      if (amountIn) {
-        inputAmount = amount; // SOL amount
-        calculatedOutputAmount = amount / trade.avgPrice; // Calculate tokens received
-        outputAmount = calculatedOutputAmount;
-      } else if (amountOut) {
-        outputAmount = amount; // Token amount desired
-        calculatedInputAmount = amount * trade.avgPrice; // Calculate SOL needed
-        inputAmount = calculatedInputAmount;
-      }
-    } else if (type === 'sell') {
-      // Sell: amountIn is tokens, calculate SOL output
-      if (amountIn) {
-        inputAmount = amount; // Token amount
-        calculatedOutputAmount = amount * trade.avgPrice; // Calculate SOL received
-        outputAmount = calculatedOutputAmount;
-      } else if (amountOut) {
-        outputAmount = amount; // SOL amount desired
-        calculatedInputAmount = amount / trade.avgPrice; // Calculate tokens needed
-        inputAmount = calculatedInputAmount;
-      }
-    }
+    // Use amounts from the provided quote
+    const inputAmount = quote.inputAmount;
+    const outputAmount = quote.outputAmount;
+    const slippageBps = quote.slippageBps;
+    const type = quote.type;
     
     // Use the shared connection from index.ts
     
@@ -345,6 +307,26 @@ app.post('/api/swap/:mint', async (req, res) => {
   }
 });
 
+// Get trade statistics by programId
+app.get('/api/trades/stats', (req, res) => {
+  try {
+    const tradeStats = getTradeStatsByProgramId();
+    
+    res.json({
+      success: true,
+      data: tradeStats,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching trade stats by programId:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch trade statistics by programId',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 app.get('/api/stats', (req, res) => {
   try {
     const stats = getMemoryStats();
@@ -371,6 +353,7 @@ export function startApiServer(): void {
     console.log(`🚀 Trade API Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/health`);
     console.log(`📈 All trades: http://localhost:${PORT}/api/trades`);
+    console.log(`📊 Trade stats by programId: http://localhost:${PORT}/api/trades/stats`);
   });
 }
 

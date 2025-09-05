@@ -2,10 +2,10 @@ import dotenv from 'dotenv';
 import { TransactionStreamer } from './TransactionStreamer';
 import { TradeMemoryManager, TradeMemoryConfig } from './MemoryManager';
 import { RawTransactionData, Trade } from './types';
-import { DexParser } from 'solana-dex-parser';
 import { TerminalMonitor } from './monitor';
 import { startApiServer } from './api';
 import { getTransactionBuilderRegistry } from './builders/TransactionBuilderRegistry';
+import { UnifiedTradeProcessor } from './UnifiedTradeProcessor';
 import { Connection } from '@solana/web3.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -23,8 +23,12 @@ const ACCOUNTS_TO_WATCH = builderRegistry.getSupportedProgramIds();
 
 // Configuration for the streamer
 const config = {
+  provider: (process.env.STREAMING_PROVIDER as 'grpc' | 'helius') || 'grpc',
   grpcEndpoint: process.env.GRPC_ENDPOINT || "", // gRPC endpoint
   grpcToken: process.env.GRPC_TOKEN || "", // gRPC x-token
+  heliusApiKey: process.env.HELIUS_API_KEY,
+  heliusEndpoint: process.env.HELIUS_ENDPOINT,
+  commitment: process.env.COMMITMENT as 'processed' | 'confirmed' | 'finalized',
   accountToWatch: ACCOUNTS_TO_WATCH,
 };
 
@@ -37,7 +41,7 @@ const memoryConfig: TradeMemoryConfig = {
 // Initialize components
 const streamer = new TransactionStreamer(config);
 const tradeMemoryManager = new TradeMemoryManager(memoryConfig);
-const dexParser = new DexParser();
+const unifiedTradeProcessor = new UnifiedTradeProcessor(connection);
 
 // Stats tracking
 let startTime = Date.now();
@@ -48,91 +52,68 @@ let monitor: TerminalMonitor | null = null;
 // Add listener for raw transactions with comprehensive parsing
 streamer.addRawTransactionListener(async (rawTransaction: RawTransactionData) => {
   try {
+    // Debug wallet address to filter transactions
+    const DEBUG_WALLET = '67mhTQJ6UN4psPtZ12TrFfWWYQepHvnVEtGBVevWVRfU';
     
-    // Parse trades directly from raw transaction (performance optimization)
-    const trades = dexParser.parseTrades(rawTransaction as any);
+    // Check if transaction involves the debug wallet
+    const accountKeys = rawTransaction.transaction?.message?.accountKeys || [];
+    const isDebugWalletTransaction = accountKeys.some((key: any) => 
+      typeof key === 'string' ? key === DEBUG_WALLET : key.pubkey === DEBUG_WALLET
+    );
     
-    // Log parser randomize
-    const shouldLog = false;
     
-    if (trades.length > 0) {      
-      // Filter out trades with SOL as mint and create new Trade type objects
-      const SOL_MINT = 'So11111111111111111111111111111111111111112';
-      const filteredTrades = trades.filter((trade: any) => {
-        const mint = trade.outputToken?.mint || trade.inputToken?.mint;
-        return mint !== SOL_MINT;
-      });
-      
-      if (filteredTrades.length === 0) {
-        return;
-      }
-      
-      const newTrades: Trade[] = filteredTrades
-        .map((trade: any) => {
-           // Calculate average price from amountRaws based on trade type
-           const inputAmountRaw = parseFloat(trade.inputToken?.amountRaw || '0');
-           const outputAmountRaw = parseFloat(trade.outputToken?.amountRaw || '0');
-           
-           let avgPrice = 0;
-           if (trade.type === 'BUY') {
-             // For buy: price = SOL amount / token amount (input is SOL, output is token)
-             avgPrice = inputAmountRaw > 0 && outputAmountRaw > 0 ? inputAmountRaw / outputAmountRaw : 0;
-           } else if (trade.type === 'SELL') {
-             // For sell: price = SOL amount / token amount (input is token, output is SOL)
-             avgPrice = inputAmountRaw > 0 && outputAmountRaw > 0 ? outputAmountRaw / inputAmountRaw : 0;
-           }
-          
-          return {
-            mint: trade.outputToken?.mint || trade.inputToken?.mint || null,
-            pool: trade.pool?.[0] || trade.Pool?.[0] || null,
-            avgPrice: avgPrice,
-            programId: trade.programId || null,
-            slot: trade.slot || rawTransaction.slot.toString()
-          };
-        })
-        .filter((trade) => {
-          // Discard if any field is null, undefined, or 'unknown'
-          return trade.mint && 
-                 trade.pool && 
-                 trade.avgPrice > 0 && 
-                 trade.programId && 
-                 trade.slot &&
-                 trade.mint !== 'unknown' &&
-                 trade.pool !== 'unknown' &&
-                 trade.programId !== 'unknown';
-        });
-      
-      if (newTrades.length === 0) {
-        return;
-      }
-      
-      // Store trades in memory manager
-      newTrades.forEach(trade => {
-        tradeMemoryManager.addTrade(trade);
-        
-        // Log trade if should log (for debugging)
-        if (shouldLog) {
-          console.log(trades)
-          console.log('New trade stored:', {
-            mint: trade.mint,
-            pool: trade.pool,
-            avgPrice: trade.avgPrice,
-            programId: trade.programId,
-            slot: trade.slot
-          });
-        }
-      });
-      
-      // Update monitor data
-      if (monitor) {
-        monitor.updateData({
-          startTime,
-          streamer,
-          tradeMemoryManager,
-          memoryConfig,
-          accountsToWatch: ACCOUNTS_TO_WATCH
+    // Only log transactions involving the debug wallet
+    const shouldLog = isDebugWalletTransaction;
+    
+    if (shouldLog) {
+      console.log(`\n🔍 Processing transaction from debug wallet: ${rawTransaction.signature}`);
+      console.log(`Account keys:`, accountKeys);
+    }
+    
+    // Process transaction using unified trade processor
+    const result = await unifiedTradeProcessor.processTransaction(rawTransaction, shouldLog);
+    
+    if (result.validTrades.length === 0) {
+      if (shouldLog && result.processingStats.totalTrades > 0) {
+        console.log(`No valid trades found in transaction ${rawTransaction.signature}`);
+        console.log('Processing stats:', result.processingStats);
+        result.invalidTrades.forEach((invalid, i) => {
+          console.log(`  Invalid trade ${i + 1}: ${invalid.reason}`);
         });
       }
+      return;
+    }
+    
+    // Store valid trades in memory manager
+    result.validTrades.forEach(trade => {
+      tradeMemoryManager.addTrade(trade);
+      
+      // Log trade if should log (for debugging)
+      if (shouldLog) {
+        console.log('New trade stored:', {
+          mint: trade.mint,
+          pool: trade.pool,
+          avgPrice: trade.avgPrice,
+          programId: trade.programId,
+          slot: trade.slot
+        });
+      }
+    });
+    
+    if (shouldLog) {
+      console.log(`✅ Saved ${result.validTrades.length} valid trades from transaction ${rawTransaction.signature}`);
+      console.log('Processing stats:', result.processingStats);
+    }
+    
+    // Update monitor data
+    if (monitor) {
+      monitor.updateData({
+        startTime,
+        streamer,
+        tradeMemoryManager,
+        memoryConfig,
+        accountsToWatch: ACCOUNTS_TO_WATCH
+      });
     }
     
   } catch (error) {
@@ -185,6 +166,41 @@ export function getMemoryStats() {
   return tradeMemoryManager.getMemoryStats();
 }
 
+// Function to get trade statistics by programId
+export function getTradeStatsByProgramId(): Record<string, { count: number; avgPrice: number; totalVolume: number; mints: string[] }> {
+  const allTrades = getAllTrades();
+  const statsByProgramId: Record<string, { count: number; totalPrice: number; avgPrice: number; totalVolume: number; mints: string[] }> = {};
+  
+  for (const [mint, trade] of allTrades) {
+    const programId = trade.programId;
+    
+    if (!statsByProgramId[programId]) {
+      statsByProgramId[programId] = {
+        count: 0,
+        totalPrice: 0,
+        avgPrice: 0,
+        totalVolume: 0,
+        mints: []
+      };
+    }
+    
+    statsByProgramId[programId].count++;
+    statsByProgramId[programId].totalPrice += trade.avgPrice;
+    statsByProgramId[programId].totalVolume += trade.avgPrice; // Using avgPrice as volume proxy
+    statsByProgramId[programId].mints.push(mint);
+  }
+  
+  // Calculate average prices
+  for (const programId in statsByProgramId) {
+    const stats = statsByProgramId[programId];
+    stats.avgPrice = stats.count > 0 ? stats.totalPrice / stats.count : 0;
+    // Remove totalPrice from the final result
+    delete (stats as any).totalPrice;
+  }
+  
+  return statsByProgramId;
+}
+
 // Function to force cleanup
 export function forceCleanup(targetPercentage: number = 0.7): number {
   return tradeMemoryManager.forceCleanup(targetPercentage);
@@ -205,9 +221,9 @@ async function startStreaming(enableMonitor: boolean = true) {
     console.log('\n🌐 Starting API server...');
     startApiServer();
     
-    console.log('\n🔌 Connecting to gRPC...');
+    console.log(`\n🔌 Connecting to ${config.provider.toUpperCase()}...`);
     
-    await streamer.connectToGrpc();
+    await streamer.connect();
     console.log('✅ Transaction streaming started successfully!');
     
     if (enableMonitor) {

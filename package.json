@@ -5,13 +5,18 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js --monitor false",
+    "start": "tsc && node dist/index.js --monitor false",
     "dev": "tsc && node dist/index.js",
     "start:snapshot": "tsc && node dist/index.js --snapshot trades_backup.json",
     "start:snapshot-url": "tsc && node dist/index.js --snapshot http://localhost:3001/api/trades",
     "api": "tsc && node dist/api.js",
     "api:dev": "tsc && node dist/api.js",
     "clean": "rmdir /s /q dist",
+    "example": "tsc && node dist/examples/streaming-providers.js",
+    "example:helius": "tsc && node dist/examples/streaming-providers.js helius",
+    "example:grpc": "tsc && node dist/examples/streaming-providers.js grpc",
+    "example:compare": "tsc && node dist/examples/streaming-providers.js compare",
+    "example:dynamic": "tsc && node dist/examples/streaming-providers.js dynamic",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -36,6 +41,7 @@
     "@triton-one/yellowstone-grpc": "^0.4.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "@types/ws": "^8.18.1",
     "blessed": "^0.1.81",
     "bs58": "^6.0.0",
     "chalk": "^5.6.0",
@@ -46,7 +52,8 @@
     "express": "^5.1.0",
     "node-fetch": "^2.7.0",
     "rpc-websockets": "^7.5.1",
-    "solana-dex-parser": "^2.6.2"
+    "solana-dex-parser": "^2.6.2",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/blessed": "^0.1.25",

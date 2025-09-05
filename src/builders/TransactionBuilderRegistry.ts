@@ -107,7 +107,7 @@ export class TransactionBuilderRegistry {
         case 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK':
           name = 'Raydium CLMM';
           break;
-        case 'CPMDWBwJDtYax9qW7AyRuVC19Cc4L4Vcy4n2BHAbHkCW':
+        case 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C':
           name = 'Raydium CPMM';
           break;
         case 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA':

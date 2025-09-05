@@ -12,13 +12,12 @@ import {
   CurveCalculator,
   FeeOn,
   Raydium,
-  USDCMint,
   TxVersion
 } from '@raydium-io/raydium-sdk-v2';
 import BN from 'bn.js';
 
 export class CPMMTransactionBuilder extends BaseTransactionBuilder {
-  public readonly programId = 'CPMDWBwJDtYax9qW7AyRuVC19Cc4L4Vcy4n2BHAbHkCW'; // Raydium CPMM
+  public readonly programId = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C'; // Raydium CPMM
   private connection: Connection;
   private raydium: Raydium | null = null;
   
@@ -61,24 +60,12 @@ export class CPMMTransactionBuilder extends BaseTransactionBuilder {
       let poolKeys: CpmmKeys | undefined;
       let rpcData: CpmmParsedRpcData;
 
-      if (this.raydium.cluster === 'mainnet') {
-        // Get pool info from API for mainnet
-        const data = await this.raydium.api.fetchPoolById({ ids: poolId });
-        poolInfo = data[0] as ApiV3PoolInfoStandardItemCpmm;
-        
-        if (!this.isValidCpmm(poolInfo.programId)) {
-          throw new Error('target pool is not CPMM pool');
-        }
-        
-        // Get RPC data for calculations
-        rpcData = await this.raydium.cpmm.getRpcPoolInfo(poolInfo.id, true);
-      } else {
-        // Get pool info from RPC for devnet
-        const data = await this.raydium.cpmm.getPoolInfoFromRpc(poolId);
-        poolInfo = data.poolInfo;
-        poolKeys = data.poolKeys;
-        rpcData = data.rpcData;
-      }
+
+      // Get pool info from RPC for devnet
+      const data = await this.raydium.cpmm.getPoolInfoFromRpc(poolId);
+      poolInfo = data.poolInfo;
+      poolKeys = data.poolKeys;
+      rpcData = data.rpcData;
 
       // Determine input and output mints based on trade type
       const inputMint = params.type === 'buy' ? NATIVE_MINT.toBase58() : params.mint;
@@ -143,7 +130,7 @@ export class CPMMTransactionBuilder extends BaseTransactionBuilder {
         swapResult,
         slippage: (params.slippageBps || 100) / 10000,
         baseIn,
-        txVersion: TxVersion.V0,
+        txVersion: TxVersion.LEGACY,
         
         // Priority fee configuration
         computeBudgetConfig: (params as any).priorityFee ? {
@@ -153,7 +140,7 @@ export class CPMMTransactionBuilder extends BaseTransactionBuilder {
       });
 
       // Extract instructions from the transaction builder
-      const transaction = await swapTxBuilder.transaction;
+      const transaction = swapTxBuilder.transaction;
       
       // Handle different transaction types
       let instructions: TransactionInstruction[];

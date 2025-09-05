@@ -169,8 +169,8 @@ export class PumpSwapTransactionBuilder extends BaseTransactionBuilder {
       
       // Get balances
       const [tokenBalance, wsolBalance] = await Promise.all([
-        this.connection.getTokenAccountBalance(tokenAccount, "confirmed"),
-        this.connection.getTokenAccountBalance(wsolAccount, "confirmed")
+        this.connection.getTokenAccountBalance(tokenAccount, "processed"),
+        this.connection.getTokenAccountBalance(wsolAccount, "processed")
       ]);
       
       return {

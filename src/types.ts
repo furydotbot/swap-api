@@ -45,11 +45,21 @@ export interface RawTransactionData {
   connectionId?: string;
 }
 
+// Streaming provider types
+export type StreamingProvider = 'grpc' | 'helius';
+
 // Streamer configuration and stats
 export interface StreamerConfig {
+  provider: StreamingProvider;
+  // gRPC settings
   grpcEndpoint?: string;
   grpcToken?: string;
+  // Helius WebSocket settings
+  heliusApiKey?: string;
+  heliusEndpoint?: string;
+  // Common settings
   accountToWatch: string | string[];
+  commitment?: 'processed' | 'confirmed' | 'finalized';
 }
 
 export interface StreamerStats {
@@ -113,6 +123,47 @@ export interface GrpcMessage {
       transaction: Transaction;
       meta: TransactionMeta;
       blockTime: number;
+    };
+  };
+}
+
+// Helius WebSocket types
+export interface HeliusTransactionSubscribeFilter {
+  vote?: boolean;
+  failed?: boolean;
+  signature?: string;
+  accountInclude?: string[];
+  accountExclude?: string[];
+  accountRequired?: string[];
+}
+
+export interface HeliusTransactionSubscribeOptions {
+  commitment?: 'processed' | 'confirmed' | 'finalized';
+  encoding?: 'base58' | 'base64' | 'jsonParsed';
+  transactionDetails?: 'full' | 'signatures' | 'accounts' | 'none';
+  showRewards?: boolean;
+  maxSupportedTransactionVersion?: number;
+}
+
+export interface HeliusWebSocketMessage {
+  jsonrpc: string;
+  id?: number;
+  method?: string;
+  params?: any;
+}
+
+export interface HeliusTransactionNotification {
+  jsonrpc: string;
+  method: 'transactionNotification';
+  params: {
+    subscription: number;
+    result: {
+      transaction: {
+        transaction: any;
+        meta: TransactionMeta;
+      };
+      signature: string;
+      slot: number;
     };
   };
 }
