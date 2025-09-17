@@ -11,7 +11,8 @@ export interface SwapInstruction {
 export interface SwapTransaction {
   transactionId: string;
   status: 'pending' | 'confirmed' | 'failed';
-  instructions: SwapInstruction[];
+  instructions?: SwapInstruction[];
+  transaction?: any; // Raw transaction object from solana-trade
 }
 
 export interface SwapParams {

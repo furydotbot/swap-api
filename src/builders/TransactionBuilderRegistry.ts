@@ -1,136 +1,220 @@
-import { ITransactionBuilder } from '../TransactionBuilder';
-import { PumpFunTransactionBuilder } from './pumpfun/PumpFunTransactionBuilder';
-import { DBCTransactionBuilder } from './meteora/DBCTransactionBuilder';
-import { LaunchpadTransactionBuilder } from './raydium/LaunchpadTransactionBuilder';
-import { AMMTransactionBuilder } from './raydium/AMMTransactionBuilder';
-import { CLMMTransactionBuilder } from './raydium/CLMMTransactionBuilder';
-import { CPMMTransactionBuilder } from './raydium/CPMMTransactionBuilder';
-import { PumpSwapTransactionBuilder } from './pumpfun/PumpSwapTransactionBuilder';
-import { DAMMV2TransactionBuilder } from './meteora/DAMMV2TransactionBuilder';
-import { DLMMTransactionBuilder } from './meteora/DLMMTransactionBuilder';
-import { Connection } from '@solana/web3.js';
+import { SolanaTrade } from './solana-trade/src';
+import { Connection, PublicKey, Keypair } from '@solana/web3.js';
+import { ITransactionBuilder, SwapParams, SwapTransaction } from '../TransactionBuilder';
+import { PROGRAM_IDS } from './solana-trade/src/helpers/program-ids';
+import { markets } from './solana-trade/src/helpers/constants';
 
 export class TransactionBuilderRegistry {
   private static instance: TransactionBuilderRegistry;
-  private builders: Map<string, ITransactionBuilder> = new Map();
+  private trader: SolanaTrade;
   private connection: Connection;
   
-  private constructor(connection: Connection) {
+  // Supported markets mapping - built using solana-trade utility
+  private supportedMarkets = {
+    [PROGRAM_IDS.PUMP_FUN_PROGRAM_ID]: markets.PUMP_FUN,
+    [PROGRAM_IDS.PUMP_SWAP_PROGRAM_ID]: markets.PUMP_SWAP,
+    [PROGRAM_IDS.RAYDIUM_PROGRAM_ID]: markets.RAYDIUM_AMM,
+    [PROGRAM_IDS.RAYDIUM_CLMM_PROGRAM_ID]: markets.RAYDIUM_CLMM,
+    [PROGRAM_IDS.RAYDIUM_CPMM_PROGRAM_ID]: markets.RAYDIUM_CPMM,
+    [PROGRAM_IDS.RAYDIUM_LAUNCHPAD_PROGRAM_ID]: markets.RAYDIUM_LAUNCHPAD,
+    [PROGRAM_IDS.METEORA_DLMM_PROGRAM_ID]: markets.METEORA_DLMM,
+    [PROGRAM_IDS.METEORA_DAMM_V2_PROGRAM_ID]: markets.METEORA_DAMM_V2,
+    [PROGRAM_IDS.METEORA_DBC_PROGRAM_ID]: markets.METEORA_DBC,
+    [PROGRAM_IDS.ORCA_WHIRLPOOL_PROGRAM_ID]: markets.ORCA_WHIRLPOOL,
+    [PROGRAM_IDS.HEAVEN_PROGRAM_ID]: markets.HEAVEN,
+    [PROGRAM_IDS.BOOP_FUN_PROGRAM_ID]: markets.BOOP_FUN,
+  };
+  
+  private constructor(connection: Connection, rpcUrl?: string) {
     this.connection = connection;
-    this.registerBuilders();
+    // Initialize SolanaTrade with custom RPC if provided
+    this.trader = new SolanaTrade(rpcUrl || connection.rpcEndpoint);
   }
   
-  public static getInstance(connection?: Connection): TransactionBuilderRegistry {
+  public static getInstance(connection?: Connection, rpcUrl?: string): TransactionBuilderRegistry {
     if (!TransactionBuilderRegistry.instance) {
       if (!connection) {
         throw new Error('Connection is required for first initialization');
       }
-      TransactionBuilderRegistry.instance = new TransactionBuilderRegistry(connection);
+      TransactionBuilderRegistry.instance = new TransactionBuilderRegistry(connection, rpcUrl);
     }
     return TransactionBuilderRegistry.instance;
   }
   
-  private registerBuilders(): void {
-    // Register PumpFun builder
-    const pumpFunBuilder = new PumpFunTransactionBuilder(this.connection);
-    this.builders.set(pumpFunBuilder.programId, pumpFunBuilder);
+  public async createBuyTransaction(params: {
+    programId: string;
+    wallet: Keypair;
+    mint: string;
+    amount: number;
+    slippage: number;
+  }) {
+    const market = this.getMarketForProgramId(params.programId);
+    if (!market) {
+      throw new Error(`Unsupported program ID: ${params.programId}`);
+    }
     
-    // Register DBC builder
-    const dbcBuilder = new DBCTransactionBuilder(this.connection);
-    this.builders.set(dbcBuilder.programId, dbcBuilder);
+    // Get transaction object without sending (returns Transaction object)
+    const transaction = await this.trader.buy({
+      market: market as any,
+      wallet: params.wallet,
+      mint: params.mint,
+      amount: params.amount,
+      slippage: params.slippage,
+      send: false // Returns Transaction object instead of sending
+    });
     
-    // Register Launchpad builder
-    const launchpadBuilder = new LaunchpadTransactionBuilder(this.connection);
-    this.builders.set(launchpadBuilder.programId, launchpadBuilder);
-    
-    // Register AMM builder
-    const ammBuilder = new AMMTransactionBuilder(this.connection);
-    this.builders.set(ammBuilder.programId, ammBuilder);
-    
-    // Register CLMM builder
-    const clmmBuilder = new CLMMTransactionBuilder(this.connection);
-    this.builders.set(clmmBuilder.programId, clmmBuilder);
-    
-    // Register CPMM builder
-    const cpmmBuilder = new CPMMTransactionBuilder(this.connection);
-    this.builders.set(cpmmBuilder.programId, cpmmBuilder);
-    
-    // Register PumpSwap builder
-    const pumpSwapBuilder = new PumpSwapTransactionBuilder(this.connection);
-    this.builders.set(pumpSwapBuilder.programId, pumpSwapBuilder);
-    
-    // Register DAMM V2 builder
-    const dammV2Builder = new DAMMV2TransactionBuilder(this.connection);
-    this.builders.set(dammV2Builder.programId, dammV2Builder);
-    
-    // Register DLMM builder
-    const dlmmBuilder = new DLMMTransactionBuilder(this.connection);
-    this.builders.set(dlmmBuilder.programId, dlmmBuilder);
+    return transaction;
   }
   
+  public async createSellTransaction(params: {
+    programId: string;
+    wallet: Keypair;
+    mint: string;
+    amount: number;
+    slippage: number;
+  }) {
+    const market = this.getMarketForProgramId(params.programId);
+    if (!market) {
+      throw new Error(`Unsupported program ID: ${params.programId}`);
+    }
+    
+    // Get transaction object without sending (returns Transaction object)
+    const transaction = await this.trader.sell({
+      market: market as any,
+      wallet: params.wallet,
+      mint: params.mint,
+      amount: params.amount,
+      slippage: params.slippage,
+      send: false // Returns Transaction object instead of sending
+    });
+    
+    return transaction;
+  }
+  
+  // Legacy compatibility method for existing API
   public getBuilder(programId: string): ITransactionBuilder | null {
-    return this.builders.get(programId) || null;
+    if (!this.hasBuilder(programId)) {
+      return null;
+    }
+    
+    // Return a wrapper that implements the ITransactionBuilder interface
+    return {
+      programId,
+      buildSwapTransaction: async (params: SwapParams): Promise<SwapTransaction> => {
+        const market = this.getMarketForProgramId(programId);
+        if (!market) {
+          throw new Error(`Unsupported program ID: ${programId}`);
+        }
+        
+        // Create a mock keypair object with the signer's public key for transaction building
+        // Note: This creates a keypair-like structure but we only use the public key for building
+        const signerPublicKey = new PublicKey(params.signer);
+        const mockKeypair = {
+          publicKey: signerPublicKey,
+          secretKey: new Uint8Array(64) // Empty secret key since we're not signing here
+        } as Keypair;
+        
+        try {
+          const transaction = await this.trader[params.type === 'buy' ? 'buy' : 'sell']({
+            market: market as any,
+            wallet: mockKeypair,
+            mint: params.mint,
+            amount: params.inputAmount || params.outputAmount || 0,
+            slippage: params.slippageBps / 100,
+            poolAddress: params.trade.pool, // Add pool address from trade data
+            send: false
+          });
+          
+          // Check if result is a Transaction object (when send: false) or string (when send: true)
+          if (typeof transaction === 'string') {
+            throw new Error('Unexpected string result from solana-trade. Expected Transaction object.');
+          }
+                    
+          // Return the transaction directly - let the API layer handle the conversion
+          return {
+            transactionId: `temp_${Date.now()}`,
+            status: 'pending' as const,
+            transaction: transaction // Return the raw transaction object
+          };
+        } catch (error) {
+          console.error('Error in buildSwapTransaction:', error);
+          console.error('Error type:', typeof error);
+          console.error('Error constructor:', (error as any)?.constructor?.name);
+          console.error('Error message:', (error as any)?.message);
+          console.error('Error stack:', (error as any)?.stack);
+          throw new Error(`Failed to build transaction: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      }
+    };
+  }
+  
+  private getMarketForProgramId(programId: string): string | null {
+    return this.supportedMarkets[programId as keyof typeof this.supportedMarkets] || null;
   }
   
   public hasBuilder(programId: string): boolean {
-    return this.builders.has(programId);
+    return programId in this.supportedMarkets;
   }
   
   public getSupportedProgramIds(): string[] {
-    return Array.from(this.builders.keys());
+    return Object.keys(this.supportedMarkets);
   }
   
-  public registerBuilder(builder: ITransactionBuilder): void {
-    this.builders.set(builder.programId, builder);
-  }
-  
-  public getBuilderInfo(): Array<{ programId: string; name: string }> {
-    const info: Array<{ programId: string; name: string }> = [];
+  public getBuilderInfo(): Array<{ programId: string; name: string; market: string }> {
+    const info: Array<{ programId: string; name: string; market: string }> = [];
     
-    for (const [programId, builder] of this.builders) {
+    for (const [programId, market] of Object.entries(this.supportedMarkets)) {
       let name = 'Unknown';
       
-      // Determine builder name based on programId
+      // Determine builder name based on programId using constants
       switch (programId) {
-        case '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P':
-          name = 'PumpFun';
+        case PROGRAM_IDS.PUMP_FUN_PROGRAM_ID:
+          name = 'PUMP_FUN';
           break;
-        case 'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN':
-          name = 'DBC';
+        case PROGRAM_IDS.PUMP_SWAP_PROGRAM_ID:
+          name = 'PUMP_SWAP';
           break;
-        case 'LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj':
-          name = 'Launchpad';
+        case PROGRAM_IDS.RAYDIUM_PROGRAM_ID:
+          name = 'RAYDIUM_AMM';
           break;
-        case '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8':
-          name = 'Raydium AMM';
+        case PROGRAM_IDS.RAYDIUM_CLMM_PROGRAM_ID:
+          name = 'RAYDIUM_CLMM';
           break;
-        case 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK':
-          name = 'Raydium CLMM';
+        case PROGRAM_IDS.RAYDIUM_CPMM_PROGRAM_ID:
+          name = 'RAYDIUM_CPMM';
           break;
-        case 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C':
-          name = 'Raydium CPMM';
+        case PROGRAM_IDS.RAYDIUM_LAUNCHPAD_PROGRAM_ID:
+          name = 'RAYDIUM_LAUNCHPAD';
           break;
-        case 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA':
-          name = 'PumpSwap';
+        case PROGRAM_IDS.METEORA_DLMM_PROGRAM_ID:
+          name = 'METEORA_DLMM';
           break;
-        case 'cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG':
-          name = 'DAMM V2';
+        case PROGRAM_IDS.METEORA_DAMM_V2_PROGRAM_ID:
+          name = 'METEORA_DAMM_V2';
           break;
-        case 'LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo':
-          name = 'DLMM';
+        case PROGRAM_IDS.METEORA_DBC_PROGRAM_ID:
+          name = 'METEORA_DBC';
           break;
-        // Add more cases as new builders are added
+        case PROGRAM_IDS.ORCA_WHIRLPOOL_PROGRAM_ID:
+          name = 'ORCA_WHIRLPOOL';
+          break;
+        case PROGRAM_IDS.HEAVEN_PROGRAM_ID:
+          name = 'HEAVEN';
+          break;
+        case PROGRAM_IDS.BOOP_FUN_PROGRAM_ID:
+          name = 'BOOP_FUN';
+          break;
         default:
           name = `Builder_${programId.substring(0, 8)}`;
       }
       
-      info.push({ programId, name });
+      info.push({ programId, name, market });
     }
     
     return info;
   }
 }
 
-export function getTransactionBuilderRegistry(connection?: Connection): TransactionBuilderRegistry {
-  return TransactionBuilderRegistry.getInstance(connection);
+export function getTransactionBuilderRegistry(connection?: Connection, rpcUrl?: string): TransactionBuilderRegistry {
+  return TransactionBuilderRegistry.getInstance(connection, rpcUrl);
 }

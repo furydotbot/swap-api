@@ -368,7 +368,6 @@ export class TransactionStreamer {
     // Send ping every 30 seconds as recommended by Helius
     this.pingInterval = setInterval(() => {
       if (!this.heliusWs || this.heliusWs.readyState !== WebSocket.OPEN) {
-        console.error('Helius WebSocket not available or not open during ping');
         return;
       }
       
