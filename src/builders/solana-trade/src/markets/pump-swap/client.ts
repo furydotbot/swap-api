@@ -32,7 +32,6 @@ export class PumpSwapClient {
 
   async getSellInstructions(params: SellParams): Promise<TransactionInstruction[]> {
     const { mintAddress, wallet, tokenAmount, slippage, poolAddress } = params;
-
     const sdkSlippagePercent = this.normalizeSlippagePercent(slippage);
     const poolKey = poolAddress ?? this.getCanonicalPoolKey(mintAddress);
     const swapState = await this.onlineSdk.swapSolanaState(poolKey, wallet);

@@ -1,6 +1,5 @@
 import { Connection, Transaction, TransactionInstruction } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
-import { createComputeBudgetInstructions } from './instructions';
 
 
 /**
@@ -17,13 +16,7 @@ export const prepareTransaction = (
 ): Transaction => {
   // Create a new transaction
   const tx = new Transaction();
-  
-  // Add compute budget instructions
-  const budgetInstructions = createComputeBudgetInstructions(priorityFeeSol);
-  for (const instruction of budgetInstructions) {
-    tx.add(instruction);
-  }
-  
+    
   // Set fee payer
   tx.feePayer = payer;
   

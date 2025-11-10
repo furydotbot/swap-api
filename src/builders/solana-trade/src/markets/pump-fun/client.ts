@@ -90,13 +90,43 @@ export class PumpFunClient {
 
   private toLamportsBN(sol: number): BN {
     if (!Number.isFinite(sol) || sol < 0) throw new Error('solAmount must be a non-negative finite number');
-    return new BN(Math.round(sol * LAMPORTS_PER_SOL));
+    
+    const lamports = sol * LAMPORTS_PER_SOL;
+    
+    // Check for overflow or invalid values before Math.round
+    if (!Number.isFinite(lamports)) {
+      throw new Error(`Invalid lamports calculation: sol=${sol}, lamports=${lamports}`);
+    }
+    
+    const roundedLamports = Math.round(lamports);
+    
+    // BN.js has issues with very large numbers or NaN
+    if (!Number.isFinite(roundedLamports) || roundedLamports > Number.MAX_SAFE_INTEGER) {
+      throw new Error(`Lamports value too large or invalid: ${roundedLamports}`);
+    }
+    
+    return new BN(roundedLamports);
   }
 
   // PumpFun tokens use 6 decimals
   private toTokenBaseUnitsBN(tokens: number): BN {
     if (!Number.isFinite(tokens) || tokens < 0) throw new Error('tokenAmount must be a non-negative finite number');
-    return new BN(Math.round(tokens * 1_000_000));
+    
+    const baseUnits = tokens * 1_000_000;
+    
+    // Check for overflow or invalid values before Math.round
+    if (!Number.isFinite(baseUnits)) {
+      throw new Error(`Invalid token base units calculation: tokens=${tokens}, baseUnits=${baseUnits}`);
+    }
+    
+    const roundedBaseUnits = Math.round(baseUnits);
+    
+    // BN.js has issues with very large numbers or NaN
+    if (!Number.isFinite(roundedBaseUnits) || roundedBaseUnits > Number.MAX_SAFE_INTEGER) {
+      throw new Error(`Token base units value too large or invalid: ${roundedBaseUnits}`);
+    }
+    
+    return new BN(roundedBaseUnits);
   }
 
   // SDK expects slippage in percent units (1 => 1%)

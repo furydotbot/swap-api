@@ -7,6 +7,7 @@ import { startApiServer } from './api';
 import { getTransactionBuilderRegistry } from './builders/TransactionBuilderRegistry';
 import { UnifiedTradeProcessor } from './UnifiedTradeProcessor';
 import { Connection } from '@solana/web3.js';
+import { SolanaTrade } from './builders/solana-trade/src';
 import * as fs from 'fs';
 import * as path from 'path';
 import fetch from 'node-fetch';
@@ -127,21 +128,48 @@ streamer.addRawTransactionListener(async (rawTransaction: RawTransactionData) =>
   }
 });
 
-// Function to get trade by mint
+// Function to get trade by mint with real-time pricing
 export async function getTradeForMint(mint: string): Promise<Trade | undefined> {
   const storedTrade = tradeMemoryManager.getTrade(mint);
+  
   if (storedTrade) {
-    // Return only the Trade properties, excluding timestamp and accessTime
-    return {
-      mint: storedTrade.mint,
-      pool: storedTrade.pool,
-      avgPrice: storedTrade.avgPrice,
-      programId: storedTrade.programId,
-      slot: storedTrade.slot
-    };
+    // Get real-time price using SolanaTrade
+    try {
+      const solanaTrade = new SolanaTrade(process.env.RPC_URL);
+      
+      // Use the program ID from stored trade to determine the correct market
+      const market = builderRegistry.getMarketForProgramId(storedTrade.programId);
+      
+      if (market) {
+        const priceData = await solanaTrade.price({
+          market,
+          mint,
+          unit: 'SOL'
+        });
+        
+        if (priceData.price > 0) {
+          // Return trade with real-time price only if successful
+          return {
+            mint: storedTrade.mint,
+            pool: storedTrade.pool,
+            avgPrice: priceData.price,
+            programId: storedTrade.programId,
+            slot: storedTrade.slot
+          };
+        } else {
+          // Price is 0 or invalid, fall back to Jupiter
+          console.warn(`Real-time price is 0 or invalid for mint ${mint}, falling back to Jupiter`);
+        }
+      } else {
+        console.warn(`No market mapping found for program ID: ${storedTrade.programId}, falling back to Jupiter`);
+      }
+    } catch (error) {
+      console.error(`Failed to fetch real-time price for mint ${mint}:`, error);
+      console.log(`Falling back to Jupiter API for mint ${mint}`);
+    }
   }
   
-  // If no local trade found, try Jupiter API as fallback
+  // If no local trade found OR real-time pricing failed, try Jupiter API as fallback
   try {
     const jupiterTrade = await fetchTradeFromJupiter(mint);
     if (jupiterTrade) {
@@ -153,146 +181,140 @@ export async function getTradeForMint(mint: string): Promise<Trade | undefined> 
     console.error(`Failed to fetch trade from Jupiter for mint ${mint}:`, error);
   }
   
+  // If Jupiter also fails and we have a stored trade, return it with original price as last resort
+  if (storedTrade) {
+    console.log(`Returning stored trade with original price for mint ${mint} as last resort`);
+    return {
+      mint: storedTrade.mint,
+      pool: storedTrade.pool,
+      avgPrice: storedTrade.avgPrice,
+      programId: storedTrade.programId,
+      slot: storedTrade.slot
+    };
+  }
+  
   return undefined;
 }
-
-// Helper function to fetch trade data from Jupiter API
+// Helper function to fetch buy trade data from Jupiter API (SOL -> Token only)
 async function fetchTradeFromJupiter(mint: string): Promise<Trade | undefined> {
   try {
     const SOL_MINT = 'So11111111111111111111111111111111111111112';
-    const amount = 1000000; // 1 token (6 decimals)
+    const amount = 1000000; // 1 SOL (9 decimals = 1e9, so 1e6 = 0.001 SOL)
     const slippage = 1;
     
-    // Try both directions: token -> SOL and SOL -> token
-    const urls = [
-      `https://lite-api.jup.ag/swap/v1/quote?inputMint=${mint}&outputMint=${SOL_MINT}&amount=${amount}&slippage=${slippage}`,
-      `https://lite-api.jup.ag/swap/v1/quote?inputMint=${SOL_MINT}&outputMint=${mint}&amount=${amount}&slippage=${slippage}`
-    ];
+    // Only fetch buy direction: SOL -> Token
+    const url = `https://lite-api.jup.ag/swap/v1/quote?inputMint=${SOL_MINT}&outputMint=${mint}&amount=${amount}&slippage=${slippage}`;
     
-    for (const url of urls) {
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          continue; // Try next URL
-        }
-        
-        const data = await response.json();
-        
-        if (data && data.inAmount && data.outAmount && data.routePlan && data.routePlan.length > 0) {
-          const route = data.routePlan[0];
-          const swapInfo = route.swapInfo;
-          
-          // Calculate average price (SOL per token)
-          const inAmount = parseFloat(data.inAmount);
-          const outAmount = parseFloat(data.outAmount);
-          let avgPrice = 0;
-          
-          if (data.inputMint === SOL_MINT) {
-            // SOL -> Token: price = SOL amount / token amount
-            avgPrice = inAmount / outAmount;
-          } else {
-            // Token -> SOL: price = SOL amount / token amount
-            avgPrice = outAmount / inAmount;
-          }
-          
-          // Extract program ID from the route
-          let programId = null;
-          if (swapInfo.label) {
-            // Map Jupiter labels to program IDs
-            const labelToProgramId: Record<string, string> = {
-              "GoonFi": "goonERTdGsjnkZqWuVjs73BZ3Pb9qoCUdBUL17BnS5j",
-              "Bonkswap": "BSwp6bEBihVLdqJRKGgzjcGLHkcTuzmSo1TQkHepzH8p",
-              "StepN": "Dooar9JkhdZ7J3LHN3A7YCuoGRUggXhQaG4kijfLGU2j",
-              "Stabble Stable Swap": "swapNyd8XiQwJ6ianp9snpu4brUqFxadzvHebnAXjJZ",
-              "Sanctum": "stkitrT1Uoy18Dk1fTrgPw8W6MVzoCfYoAFT4MLsmhq",
-              "Whirlpool": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
-              "Meteora DAMM v2": "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG",
-              "Solayer": "endoLNCKTqDn8gSVnN2hDdpgACUPWHZTwoYnnMybpAT",
-              "OpenBook V2": "opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb",
-              "Cropper": "H8W3ctz92svYg6mkn1UtGfu2aQr2fnUFHM1RhScEtQDt",
-              "Phoenix": "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY",
-              "SolFi": "SoLFiHG9TfgtdUXUjWAxi3LtvYuFyDLVhBWxdMZxyCe",
-              "Pump.fun Amm": "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
-              "Helium Network": "treaf4wWBBty3fHdyBpo35Mz84M8k3heKXmjmi9vFt5",
-              "Raydium CP": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
-              "Perps": "PERPHjGBqRHArX4DySjwM6UJHiR3sWAatqfdBS2qQJu",
-              "Raydium": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
-              "Byreal": "REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2",
-              "Invariant": "HyaB3W9q6XdA5xwpU4XnSZV94htfmbmqJXZcEbRaJutt",
-              "DexLab": "DSwpgjMvXhtGn6BsbqmacdBZyfLj6jSWf3HJpdJtmg6N",
-              "Perena": "NUMERUNsFCP3kuNmWZuXtm1AaQCPj9uw6Guv2Ekoi5P",
-              "Crema": "CLMM9tUoggJu2wagPkkqs9eFG4BWhVBZWkP1qv3Sp7tR",
-              "Penguin": "PSwapMdSai8tjrEXcxFeQth87xC4rRsa4VA5mhGhXkP",
-              "Token Swap": "SwaPpA9LAaLfeLi3a68M4DjnLqgtticKg6CnyNwgAC8",
-              "Saber": "SSwpkEEcbUqx4vtoEByFjSkhKdCT862DNVb52nZg1UZ",
-              "Woofi": "WooFif76YGRNjk1pA8wCsN67aQsD9f9iLsz4NcJ1AVb",
-              "Meteora DLMM": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
-              "SolFi V2": "SV2EYYJyRz2YhfXwXnhNAevDEui5Q6yrfyo13WtupPF",
-              "Mercurial": "MERLuDFBMmsHnsBPZw2sDQZHvXFMwp8EdjudcU2HKky",
-              "Gavel": "srAMMzfVHVAtgSJc8iH6CfKzuWuUTzLHVCE81QU1rgi",
-              "Obric V2": "obriQD1zbpyLz95G5n7nJe6a4DPjpFwa5XYPoNm113y",
-              "Pump.fun": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
-              "ZeroFi": "ZERor4xhbUycZ6gb9ntrhqscUcZmAbQDjEAtCf4hbZY",
-              "FluxBeam": "FLUXubRmkEi2q6K3Y9kBPg9248ggaZVsoSFhtJHSrm1X",
-              "Raydium CLMM": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
-              "Boop.fun": "boop8hVGQGqehUK2iVEMEnMrL5RbjywRzHKBmBE7ry4",
-              "Orca V2": "9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP",
-              "Orca V1": "DjVE6JNiYqPL2QXyCUUh8rNjHrbz9hXHNYt99MQ59qw1",
-              "Meteora": "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB",
-              "Aquifer": "AQU1FRd7papthgdrwPTTq5JacJh8YtwEXaBfKU3bTz45",
-              "1DEX": "DEXYosS6oEGvk8uCDayvwEZz4qEyDJRf9nFgYCaqPMTm",
-              "Saber (Decimals)": "DecZY86MU5Gj7kppfUCEmd4LbXXuyZH1yHaP2NTqdiZB",
-              "Moonit": "MoonCVVNZFSYkqNXP6bxHLPL6QQJiMagDL3qcqUQTrG",
-              "Saros": "SSwapUtytfBdBn1b9NUGG6foMVPtcWgpRU32HToDUZr",
-              "Raydium Launchlab": "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj",
-              "Dynamic Bonding Curve": "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN",
-              "Sanctum Infinity": "5ocnV1qiCgaQR8Jb8xWnVbApfaygJ8tNoZfgPwsgx9kx",
-              "TesseraV": "TessVdML9pBGgG9yGks7o4HewRaXVAMuoVj4x83GLQH",
-              "HumidiFi": "9H6tua7jkLhdm3w8BvgpTn5LZNU7g4ZynDmCiNN3q6Rp",
-              "Stabble Weighted Swap": "swapFpHZwjELNnjvThjajtiVmkz3yPQEHjLtka2fwHW",
-              "Aldrin": "AMM55ShdkoGRB5jVYPjWziwk8m5MpwyDgsMWHaMSQWH6",
-              "PancakeSwap": "HpNfyc2Saw7RKkQd8nEL4khUcuPhQ7WwY1B2qjx8jxFq",
-              "Guacswap": "Gswppe6ERWKpUTXvRPfXdzHhiCyJvLadVvXGfdpBqcE1",
-              "Lifinity V2": "2wT8Yq49kHgDzXuPxZSaeLaH1qbmGXtEyPy64bL7aD3c",
-              "Virtuals": "5U3EU2ubXtK84QcRjWVmYt9RaDyA8gKxdUrPFXmZyaki",
-              "GooseFX GAMMA": "GAMMA7meSFWaBXF25oSUgmGRwaW6sCMFLmBNiMSdbHVT",
-              "Heaven": "HEAVENoP2qxoeuF8Dj2oT1GHEnu49U5mJYkdeC8BAX2o",
-              "Aldrin V2": "CURVGoZn8zycx6FXwwevgBTB2gVvdbGTEpvMJDbgs2t4"
-            };
-            const mappedProgramId = labelToProgramId[swapInfo.label];
-            
-            // Only use the program ID if it's supported by our transaction builders
-            if (mappedProgramId && builderRegistry.hasBuilder(mappedProgramId)) {
-              programId = mappedProgramId;
-            }
-          }
-          
-          const trade: Trade = {
-             mint: mint,
-             pool: swapInfo.ammKey,
-             avgPrice: avgPrice,
-             programId: programId || 'unknown',
-             slot: data.contextSlot?.toString() || Date.now().toString()
-           };
-          
-          console.log(`✅ Fetched trade from Jupiter for mint ${mint}:`, {
-            avgPrice: trade.avgPrice,
-            programId: trade.programId,
-            pool: trade.pool,
-            label: swapInfo.label
-          });
-          
-          return trade;
-        }
-      } catch (error) {
-        console.error(`Error fetching from Jupiter URL ${url}:`, error);
-        continue;
+    const response = await fetch(url);
+    if (!response.ok) {
+      return undefined;
+    }
+    
+    const data = await response.json();
+    
+    if (!data || !data.inAmount || !data.outAmount || !data.routePlan || data.routePlan.length === 0) {
+      return undefined;
+    }
+    
+    // Skip multi-hop swaps
+    if (data.routePlan.length > 1) {
+      console.log(`Skipping multi-hop swap with ${data.routePlan.length} route plan items for mint ${mint}`);
+      return undefined;
+    }
+    
+    const route = data.routePlan[0];
+    const swapInfo = route.swapInfo;
+    
+    // Calculate price (SOL per token) for buy direction
+    const solAmount = parseFloat(data.inAmount) / 1e9; // Convert lamports to SOL
+    const tokenAmount = parseFloat(data.outAmount); // Keep in native token units
+    const avgPrice = solAmount / tokenAmount; // SOL per token (accounting for token decimals)
+    
+    // Extract program ID from the route
+    let programId = 'unknown';
+    if (swapInfo.label) {
+      // Map Jupiter labels to program IDs
+      const labelToProgramId: Record<string, string> = {
+        "GoonFi": "goonERTdGsjnkZqWuVjs73BZ3Pb9qoCUdBUL17BnS5j",
+        "Bonkswap": "BSwp6bEBihVLdqJRKGgzjcGLHkcTuzmSo1TQkHepzH8p",
+        "StepN": "Dooar9JkhdZ7J3LHN3A7YCuoGRUggXhQaG4kijfLGU2j",
+        "Stabble Stable Swap": "swapNyd8XiQwJ6ianp9snpu4brUqFxadzvHebnAXjJZ",
+        "Sanctum": "stkitrT1Uoy18Dk1fTrgPw8W6MVzoCfYoAFT4MLsmhq",
+        "Whirlpool": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+        "Meteora DAMM v2": "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG",
+        "Solayer": "endoLNCKTqDn8gSVnN2hDdpgACUPWHZTwoYnnMybpAT",
+        "OpenBook V2": "opnb2LAfJYbRMAHHvqjCwQxanZn7ReEHp1k81EohpZb",
+        "Cropper": "H8W3ctz92svYg6mkn1UtGfu2aQr2fnUFHM1RhScEtQDt",
+        "Phoenix": "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY",
+        "SolFi": "SoLFiHG9TfgtdUXUjWAxi3LtvYuFyDLVhBWxdMZxyCe",
+        "Pump.fun Amm": "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
+        "Helium Network": "treaf4wWBBty3fHdyBpo35Mz84M8k3heKXmjmi9vFt5",
+        "Raydium CP": "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",
+        "Perps": "PERPHjGBqRHArX4DySjwM6UJHiR3sWAatqfdBS2qQJu",
+        "Raydium": "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+        "Byreal": "REALQqNEomY6cQGZJUGwywTBD2UmDT32rZcNnfxQ5N2",
+        "Invariant": "HyaB3W9q6XdA5xwpU4XnSZV94htfmbmqJXZcEbRaJutt",
+        "DexLab": "DSwpgjMvXhtGn6BsbqmacdBZyfLj6jSWf3HJpdJtmg6N",
+        "Perena": "NUMERUNsFCP3kuNmWZuXtm1AaQCPj9uw6Guv2Ekoi5P",
+        "Crema": "CLMM9tUoggJu2wagPkkqs9eFG4BWhVBZWkP1qv3Sp7tR",
+        "Penguin": "PSwapMdSai8tjrEXcxFeQth87xC4rRsa4VA5mhGhXkP",
+        "Token Swap": "SwaPpA9LAaLfeLi3a68M4DjnLqgtticKg6CnyNwgAC8",
+        "Saber": "SSwpkEEcbUqx4vtoEByFjSkhKdCT862DNVb52nZg1UZ",
+        "Woofi": "WooFif76YGRNjk1pA8wCsN67aQsD9f9iLsz4NcJ1AVb",
+        "Meteora DLMM": "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+        "SolFi V2": "SV2EYYJyRz2YhfXwXnhNAevDEui5Q6yrfyo13WtupPF",
+        "Mercurial": "MERLuDFBMmsHnsBPZw2sDQZHvXFMwp8EdjudcU2HKky",
+        "Gavel": "srAMMzfVHVAtgSJc8iH6CfKzuWuUTzLHVCE81QU1rgi",
+        "Obric V2": "obriQD1zbpyLz95G5n7nJe6a4DPjpFwa5XYPoNm113y",
+        "Pump.fun": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
+        "ZeroFi": "ZERor4xhbUycZ6gb9ntrhqscUcZmAbQDjEAtCf4hbZY",
+        "FluxBeam": "FLUXubRmkEi2q6K3Y9kBPg9248ggaZVsoSFhtJHSrm1X",
+        "Raydium CLMM": "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+        "Boop.fun": "boop8hVGQGqehUK2iVEMEnMrL5RbjywRzHKBmBE7ry4",
+        "Orca V2": "9W959DqEETiGZocYWCQPaJ6sBmUzgfxXfqGeTEdp3aQP",
+        "Orca V1": "DjVE6JNiYqPL2QXyCUUh8rNjHrbz9hXHNYt99MQ59qw1",
+        "Meteora": "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB",
+        "Aquifer": "AQU1FRd7papthgdrwPTTq5JacJh8YtwEXaBfKU3bTz45",
+        "1DEX": "DEXYosS6oEGvk8uCDayvwEZz4qEyDJRf9nFgYCaqPMTm",
+        "Saber (Decimals)": "DecZY86MU5Gj7kppfUCEmd4LbXXuyZH1yHaP2NTqdiZB",
+        "Moonit": "MoonCVVNZFSYkqNXP6bxHLPL6QQJiMagDL3qcqUQTrG",
+        "Saros": "SSwapUtytfBdBn1b9NUGG6foMVPtcWgpRU32HToDUZr",
+        "Raydium Launchlab": "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj",
+        "Dynamic Bonding Curve": "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN",
+        "Sanctum Infinity": "5ocnV1qiCgaQR8Jb8xWnVbApfaygJ8tNoZfgPwsgx9kx",
+        "TesseraV": "TessVdML9pBGgG9yGks7o4HewRaXVAMuoVj4x83GLQH",
+        "HumidiFi": "9H6tua7jkLhdm3w8BvgpTn5LZNU7g4ZynDmCiNN3q6Rp",
+        "Stabble Weighted Swap": "swapFpHZwjELNnjvThjajtiVmkz3yPQEHjLtka2fwHW",
+        "Aldrin": "AMM55ShdkoGRB5jVYPjWziwk8m5MpwyDgsMWHaMSQWH6",
+        "PancakeSwap": "HpNfyc2Saw7RKkQd8nEL4khUcuPhQ7WwY1B2qjx8jxFq",
+        "Guacswap": "Gswppe6ERWKpUTXvRPfXdzHhiCyJvLadVvXGfdpBqcE1",
+        "Lifinity V2": "2wT8Yq49kHgDzXuPxZSaeLaH1qbmGXtEyPy64bL7aD3c",
+        "Virtuals": "5U3EU2ubXtK84QcRjWVmYt9RaDyA8gKxdUrPFXmZyaki",
+        "GooseFX GAMMA": "GAMMA7meSFWaBXF25oSUgmGRwaW6sCMFLmBNiMSdbHVT",
+        "Heaven": "HEAVENoP2qxoeuF8Dj2oT1GHEnu49U5mJYkdeC8BAX2o",
+        "Aldrin V2": "CURVGoZn8zycx6FXwwevgBTB2gVvdbGTEpvMJDbgs2t4"
+      };
+      
+      const mappedProgramId = labelToProgramId[swapInfo.label];
+      
+      // Only use the program ID if it's supported by our transaction builders
+      if (mappedProgramId && builderRegistry.hasBuilder(mappedProgramId)) {
+        programId = mappedProgramId;
       }
     }
     
-    return undefined;
+    const trade: Trade = {
+      mint: mint,
+      pool: swapInfo.ammKey,
+      avgPrice: avgPrice,
+      programId: programId,
+      slot: data.contextSlot?.toString() || Date.now().toString()
+    };
+    
+    return trade;
+    
   } catch (error) {
-    console.error('Error in fetchTradeFromJupiter:', error);
+    console.error('Error in fetchBuyTradeFromJupiter:', error);
     return undefined;
   }
 }

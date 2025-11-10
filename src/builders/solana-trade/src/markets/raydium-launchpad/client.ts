@@ -39,6 +39,9 @@ export class RaydiumLaunchpadClient {
     if (!poolInfo.mintA.equals(expectedMintA)) {
       throw new Error('Incompatible poolAddress for Raydium Launchpad: mintA mismatch');
     }
+    if (!poolInfo.mintB.equals(NATIVE_MINT)) {
+      throw new Error('Incompatible poolAddress for Raydium Launchpad: mintB is not SOL');
+    }
     return { programId, poolId, poolInfo, platformInfo, mintInfo };
   }
 
@@ -78,7 +81,7 @@ export class RaydiumLaunchpadClient {
 
     const decimals: number = mintInfo.decimals ?? 6;
     const inAmount = new BN(Math.round(tokenAmount * Math.pow(10, decimals)));
-    const slippageBps = new BN(Math.max(0, Math.min(10000, Math.round(slippage * 10000))));
+    const slippageBps = new BN(Math.max(0, Math.min(100, Math.round(slippage * 10000))));
 
     const make = await raydium.launchpad.sellToken({
       programId,
@@ -89,6 +92,7 @@ export class RaydiumLaunchpadClient {
       platformFeeRate: platformInfo.feeRate,
       txVersion: TxVersion.LEGACY,
       sellAmount: inAmount,
+      slippage: slippageBps,
       // mintB defaults to SOL
       // slippage for sell is handled inside SDK using config/platform data
     });

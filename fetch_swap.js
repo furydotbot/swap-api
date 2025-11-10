@@ -5,8 +5,8 @@ const bs58 = require('bs58').default;
 const fs = require('fs');
 
 // Configuration
-const API_URL = 'http://localhost:3001/api/swap/5kqG17PTYTVJzYEWg6keZiiU7LdWKzSZbyHuUcpcpump';
-const QUOTE_URL = 'http://localhost:3001/api/quote/5kqG17PTYTVJzYEWg6keZiiU7LdWKzSZbyHuUcpcpump';
+const API_URL = 'http://localhost:5551/api/swap/AN6fVTS9iJYRFpQoAJB7WLrK2H956ULpNrY4vR9Lpump';
+const QUOTE_URL = 'http://localhost:5551/api/quote/AN6fVTS9iJYRFpQoAJB7WLrK2H956ULpNrY4vR9Lpump';
 const RPC_URL = 'https://solana-rpc.publicnode.com';
 
 // You need to provide your private key here (base58 encoded)
@@ -34,8 +34,8 @@ async function fetchAndExecuteSwap() {
         // Prepare direct swap request (no quote needed)
         const swapRequest = {
             signer: keypair.publicKey.toString(),
-            type: 'sell',           // 'buy' or 'sell'
-            amountIn: 2000,        // SOL amount for buy, token amount for sell
+            type: 'buy',           // 'buy' or 'sell'
+            amountIn: 0.01,        // SOL amount for buy, token amount for sell not raw amount but amount in decimals
             slippage: 9900,        // 99% slippage in basis points
         };
         

@@ -1,5 +1,4 @@
 import { Connection, PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
-import { createComputeBudgetInstructions } from './helpers/instructions';
 import { markets as Markets, swapDirection as SwapDirection } from './helpers/constants';
 import { PumpFunClient } from './markets/pump-fun/client';
 import { PumpSwapClient } from './markets/pump-swap/client';
@@ -39,11 +38,6 @@ export async function buildTransaction(params: BuildTransactionParams): Promise<
 
   const tx = new Transaction();
 
-  // Add compute budget instructions (priority fee)
-  const budgetIx = createComputeBudgetInstructions(priorityFeeSol);
-  budgetIx.forEach(ix => tx.add(ix));
-
-
   // Market-specific instructions
   const client = createMarketClient(connection, market);
   const invocation = createDirectionInvoker(client, direction);
@@ -61,6 +55,10 @@ export async function buildTransaction(params: BuildTransactionParams): Promise<
   }
 
   tx.feePayer = wallet.publicKey;
+  
+  const { blockhash } = await connection.getLatestBlockhash('confirmed');
+  tx.recentBlockhash = blockhash;
+  
   return tx;
 }
 

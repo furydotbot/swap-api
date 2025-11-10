@@ -148,7 +148,7 @@ export class TransactionBuilderRegistry {
     };
   }
   
-  private getMarketForProgramId(programId: string): string | null {
+  public getMarketForProgramId(programId: string): string | null {
     return this.supportedMarkets[programId as keyof typeof this.supportedMarkets] || null;
   }
   

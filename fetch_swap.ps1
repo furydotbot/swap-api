@@ -3,7 +3,7 @@
 try {
     Write-Host "Making API request to swap endpoint..."
     
-    $response = Invoke-WebRequest -Uri "http://localhost:3001/api/swap/4YznpSqtrT7msybUvLgwPTVyrwx48rrfQv87n9AFpump" -Method POST -Body '{"amountIn":1,"type":"buy","slippage":150,"signer":"85LeSmM6mkGq93V26ky18crjPvGE4zdpEziFLoJVewaU"}' -ContentType "application/json"
+    $response = Invoke-WebRequest -Uri "http://localhost:5551/api/swap/4YznpSqtrT7msybUvLgwPTVyrwx48rrfQv87n9AFpump" -Method POST -Body '{"amountIn":1,"type":"buy","slippage":150,"signer":"85LeSmM6mkGq93V26ky18crjPvGE4zdpEziFLoJVewaU"}' -ContentType "application/json"
     
     $jsonResponse = $response | ConvertFrom-Json
     
